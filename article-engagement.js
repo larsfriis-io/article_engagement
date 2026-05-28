@@ -26,11 +26,11 @@
       window.dataLayer.push({
         event: eventName,
         article_engagement: {
-          article_title: articleTitle,
-          article_word_count: words,
-          article_read_time_ms: Math.round(elapsedMs),
-          article_expected_read_time_ms: Math.round(expectedMs),
-          article_read_ratio: expectedMs > 0 ? elapsedMs / expectedMs : 0
+          title: articleTitle,
+          word_count: words,
+          read_time_ms: Math.round(elapsedMs),
+          expected_read_time_ms: Math.round(expectedMs),
+          read_ratio: expectedMs > 0 ? Math.round((elapsedMs / expectedMs) * 100) / 100: 0
         }
       });
     }
@@ -63,6 +63,7 @@
           startedAt = Date.now();
 
           pushEvent('article_start', 0);
+
           startObserver.disconnect();
         }
       });
@@ -73,8 +74,10 @@
     startObserver.observe(element);
 
     var bottomMarker = document.createElement('div');
+
     bottomMarker.style.height = '1px';
     bottomMarker.style.width = '1px';
+
     element.appendChild(bottomMarker);
 
     var bottomObserver = new IntersectionObserver(function (entries) {
@@ -83,15 +86,21 @@
 
         if (entry.isIntersecting) {
           bottomTimer = setTimeout(function () {
+
             hasCompleted = true;
 
             var elapsedMs = Date.now() - startedAt;
+
             pushEvent(classify(elapsedMs), elapsedMs);
 
             bottomObserver.disconnect();
+
           }, bottomVisibleRequiredMs);
+
         } else if (bottomTimer) {
+
           clearTimeout(bottomTimer);
+
           bottomTimer = null;
         }
       });
