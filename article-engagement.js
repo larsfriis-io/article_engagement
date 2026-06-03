@@ -6,7 +6,10 @@
     var articleTitle = settings.articleTitle || '';
     var wordsPerMinute = settings.wordsPerMinute || 220;
     var bottomVisibleRequiredMs = settings.bottomVisibleRequiredMs || 2000;
+
     var startViewportRatio = 0.5;
+    var skimmedThreshold = 0.25;
+    var readThreshold = 0.7;
 
     var element = document.querySelector(cssSelector);
     if (!element) return;
@@ -30,7 +33,9 @@
           word_count: words,
           read_time_ms: Math.round(elapsedMs),
           expected_read_time_ms: Math.round(expectedMs),
-          read_ratio: expectedMs > 0 ? Math.round((elapsedMs / expectedMs) * 100) / 100: 0
+          read_ratio: expectedMs > 0
+            ? Math.round((elapsedMs / expectedMs) * 100) / 100
+            : 0
         }
       });
     }
@@ -38,8 +43,8 @@
     function classify(elapsedMs) {
       var ratio = expectedMs > 0 ? elapsedMs / expectedMs : 0;
 
-      if (ratio >= 0.7) return 'article_read';
-      if (ratio >= 0.25) return 'article_skimmed';
+      if (ratio >= readThreshold) return 'article_read';
+      if (ratio >= skimmedThreshold) return 'article_skimmed';
       return 'article_scrolled';
     }
 
@@ -50,7 +55,23 @@
     }
 
     if (isFullyVisible()) {
-      pushEvent('article_seen', 0);
+      hasStarted = true;
+      startedAt = Date.now();
+
+      pushEvent('article_start', 0);
+
+      setTimeout(function () {
+        pushEvent('article_scrolled', Date.now() - startedAt);
+      }, bottomVisibleRequiredMs);
+
+      setTimeout(function () {
+        pushEvent('article_skimmed', Date.now() - startedAt);
+      }, expectedMs * skimmedThreshold);
+
+      setTimeout(function () {
+        pushEvent('article_read', Date.now() - startedAt);
+      }, expectedMs * readThreshold);
+
       return;
     }
 
@@ -74,7 +95,6 @@
     startObserver.observe(element);
 
     var bottomMarker = document.createElement('div');
-
     bottomMarker.style.height = '1px';
     bottomMarker.style.width = '1px';
 
@@ -86,7 +106,6 @@
 
         if (entry.isIntersecting) {
           bottomTimer = setTimeout(function () {
-
             hasCompleted = true;
 
             var elapsedMs = Date.now() - startedAt;
@@ -94,13 +113,9 @@
             pushEvent(classify(elapsedMs), elapsedMs);
 
             bottomObserver.disconnect();
-
           }, bottomVisibleRequiredMs);
-
         } else if (bottomTimer) {
-
           clearTimeout(bottomTimer);
-
           bottomTimer = null;
         }
       });
