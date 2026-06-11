@@ -53,10 +53,16 @@
       return 'scrolled';
     }
 
-    function isFullyVisible() {
+    function getVisibleHeight() {
       var rect = element.getBoundingClientRect();
+      var visibleTop = Math.max(rect.top, 0);
+      var visibleBottom = Math.min(rect.bottom, window.innerHeight);
 
-      return rect.top >= 0 && rect.bottom <= window.innerHeight;
+      return Math.max(0, visibleBottom - visibleTop);
+    }
+
+    function isElementFillingStartViewportRatio() {
+      return getVisibleHeight() >= window.innerHeight * startViewportRatio;
     }
 
     function startTracking() {
@@ -66,43 +72,23 @@
       startedAt = Date.now();
 
       pushEvent('start', 0);
+
+      window.removeEventListener('scroll', checkStart);
+      window.removeEventListener('resize', checkStart);
+      window.removeEventListener('load', checkStart);
     }
 
-    if (isFullyVisible()) {
-      startTracking();
+    function checkStart() {
+      if (hasStarted) return;
 
-      setTimeout(function () {
-        pushEvent('scrolled', Date.now() - startedAt);
-      }, bottomVisibleRequiredMs);
-
-      setTimeout(function () {
-        pushEvent('skimmed', Date.now() - startedAt);
-      }, expectedMs * skimmedThreshold);
-
-      setTimeout(function () {
-        pushEvent('read', Date.now() - startedAt);
-      }, expectedMs * readThreshold);
-
-      return;
+      if (isElementFillingStartViewportRatio()) {
+        startTracking();
+      }
     }
-
-    var startObserver = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (entry.intersectionRatio >= startViewportRatio) {
-          startTracking();
-          startObserver.disconnect();
-        }
-      });
-    }, {
-      threshold: [startViewportRatio]
-    });
-
-    startObserver.observe(element);
 
     var bottomMarker = document.createElement('div');
     bottomMarker.style.height = '1px';
     bottomMarker.style.width = '1px';
-
     element.appendChild(bottomMarker);
 
     var bottomObserver = new IntersectionObserver(function (entries) {
@@ -111,6 +97,8 @@
 
         if (entry.isIntersecting) {
           bottomTimer = setTimeout(function () {
+            if (!hasStarted || hasCompleted) return;
+
             hasCompleted = true;
 
             var elapsedMs = Date.now() - startedAt;
@@ -125,9 +113,15 @@
         }
       });
     }, {
-      threshold: 1
+      threshold: 0
     });
 
     bottomObserver.observe(bottomMarker);
+
+    window.addEventListener('scroll', checkStart);
+    window.addEventListener('resize', checkStart);
+    window.addEventListener('load', checkStart);
+
+    checkStart();
   };
 })();
