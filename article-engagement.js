@@ -6,6 +6,7 @@
     var articleTitle = settings.articleTitle || '';
     var wordsPerMinute = settings.wordsPerMinute || 220;
     var bottomVisibleRequiredMs = settings.bottomVisibleRequiredMs || 2000;
+    var eventPrefix = settings.eventPrefix || 'article_';
 
     var startViewportRatio = 0.5;
     var skimmedThreshold = 0.25;
@@ -23,11 +24,15 @@
     var hasCompleted = false;
     var bottomTimer = null;
 
+    function getEventName(name) {
+      return eventPrefix + name;
+    }
+
     function pushEvent(eventName, elapsedMs) {
       window.dataLayer = window.dataLayer || [];
 
       window.dataLayer.push({
-        event: eventName,
+        event: getEventName(eventName),
         article_engagement: {
           title: articleTitle,
           word_count: words,
@@ -43,9 +48,9 @@
     function classify(elapsedMs) {
       var ratio = expectedMs > 0 ? elapsedMs / expectedMs : 0;
 
-      if (ratio >= readThreshold) return 'article_read';
-      if (ratio >= skimmedThreshold) return 'article_skimmed';
-      return 'article_scrolled';
+      if (ratio >= readThreshold) return 'read';
+      if (ratio >= skimmedThreshold) return 'skimmed';
+      return 'scrolled';
     }
 
     function isFullyVisible() {
@@ -54,22 +59,28 @@
       return rect.top >= 0 && rect.bottom <= window.innerHeight;
     }
 
-    if (isFullyVisible()) {
+    function startTracking() {
+      if (hasStarted) return;
+
       hasStarted = true;
       startedAt = Date.now();
 
-      pushEvent('article_start', 0);
+      pushEvent('start', 0);
+    }
+
+    if (isFullyVisible()) {
+      startTracking();
 
       setTimeout(function () {
-        pushEvent('article_scrolled', Date.now() - startedAt);
+        pushEvent('scrolled', Date.now() - startedAt);
       }, bottomVisibleRequiredMs);
 
       setTimeout(function () {
-        pushEvent('article_skimmed', Date.now() - startedAt);
+        pushEvent('skimmed', Date.now() - startedAt);
       }, expectedMs * skimmedThreshold);
 
       setTimeout(function () {
-        pushEvent('article_read', Date.now() - startedAt);
+        pushEvent('read', Date.now() - startedAt);
       }, expectedMs * readThreshold);
 
       return;
@@ -77,14 +88,8 @@
 
     var startObserver = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
-        if (hasStarted) return;
-
         if (entry.intersectionRatio >= startViewportRatio) {
-          hasStarted = true;
-          startedAt = Date.now();
-
-          pushEvent('article_start', 0);
-
+          startTracking();
           startObserver.disconnect();
         }
       });
