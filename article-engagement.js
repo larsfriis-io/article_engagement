@@ -5,8 +5,6 @@
     var cssSelector = settings.cssSelector || '.article-content';
     var articleTitle = settings.articleTitle || '';
     var wordsPerMinute = settings.wordsPerMinute || 220;
-    var bottomVisibleRequiredMs = settings.bottomVisibleRequiredMs || 2000;
-    var eventPrefix = settings.eventPrefix || 'article_';
 
     var startViewportRatio = 0.5;
     var skimmedThreshold = 0.25;
@@ -22,17 +20,29 @@
     var startedAt = null;
     var hasStarted = false;
     var hasCompleted = false;
-    var bottomTimer = null;
 
-    function getEventName(name) {
-      return eventPrefix + name;
+    var sentScroll25 = false;
+    var sentScroll50 = false;
+    var sentScroll75 = false;
+
+    function getElapsedMs() {
+      if (!startedAt) return 0;
+      return Date.now() - startedAt;
+    }
+
+    function getStatus(elapsedMs) {
+      var ratio = expectedMs > 0 ? elapsedMs / expectedMs : 0;
+
+      if (ratio >= readThreshold) return 'read';
+      if (ratio >= skimmedThreshold) return 'skimmed';
+      return 'scrolled';
     }
 
     function pushEvent(eventName, elapsedMs) {
       window.dataLayer = window.dataLayer || [];
 
       window.dataLayer.push({
-        event: getEventName(eventName),
+        event: eventName,
         article_engagement: {
           title: articleTitle,
           word_count: words,
@@ -45,83 +55,67 @@
       });
     }
 
-    function classify(elapsedMs) {
-      var ratio = expectedMs > 0 ? elapsedMs / expectedMs : 0;
-
-      if (ratio >= readThreshold) return 'read';
-      if (ratio >= skimmedThreshold) return 'skimmed';
-      return 'scrolled';
-    }
-
-    function getVisibleHeight() {
+    function getVisibleViewportRatio() {
       var rect = element.getBoundingClientRect();
+
       var visibleTop = Math.max(rect.top, 0);
       var visibleBottom = Math.min(rect.bottom, window.innerHeight);
+      var visibleHeight = Math.max(visibleBottom - visibleTop, 0);
 
-      return Math.max(0, visibleBottom - visibleTop);
+      return visibleHeight / window.innerHeight;
     }
 
-    function isElementFillingStartViewportRatio() {
-      return getVisibleHeight() >= window.innerHeight * startViewportRatio;
+    function getArticleProgress() {
+      var rect = element.getBoundingClientRect();
+      return (window.innerHeight - rect.top) / rect.height;
     }
 
-    function startTracking() {
-      if (hasStarted) return;
+    function completeArticle() {
+      if (hasCompleted || !hasStarted) return;
 
-      hasStarted = true;
-      startedAt = Date.now();
+      hasCompleted = true;
 
-      pushEvent('start', 0);
+      window.removeEventListener('scroll', checkProgress);
+      window.removeEventListener('resize', checkProgress);
 
-      window.removeEventListener('scroll', checkStart);
-      window.removeEventListener('resize', checkStart);
-      window.removeEventListener('load', checkStart);
+      pushEvent('article_' + getStatus(getElapsedMs()), getElapsedMs());
     }
 
-    function checkStart() {
-      if (hasStarted) return;
+    function checkProgress() {
+      var progress = getArticleProgress();
 
-      if (isElementFillingStartViewportRatio()) {
-        startTracking();
+      if (!hasStarted && getVisibleViewportRatio() >= startViewportRatio) {
+        hasStarted = true;
+        startedAt = Date.now();
+
+        pushEvent('article_start', 0);
+      }
+
+      if (!hasStarted || hasCompleted) return;
+
+      if (!sentScroll25 && progress >= 0.25) {
+        sentScroll25 = true;
+        pushEvent('article_25_scroll', getElapsedMs());
+      }
+
+      if (!sentScroll50 && progress >= 0.5) {
+        sentScroll50 = true;
+        pushEvent('article_50_scroll', getElapsedMs());
+      }
+
+      if (!sentScroll75 && progress >= 0.75) {
+        sentScroll75 = true;
+        pushEvent('article_75_scroll', getElapsedMs());
+      }
+
+      if (progress >= 1) {
+        completeArticle();
       }
     }
 
-    var bottomMarker = document.createElement('div');
-    bottomMarker.style.height = '1px';
-    bottomMarker.style.width = '1px';
-    element.appendChild(bottomMarker);
+    window.addEventListener('scroll', checkProgress);
+    window.addEventListener('resize', checkProgress);
 
-    var bottomObserver = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (!hasStarted || hasCompleted) return;
-
-        if (entry.isIntersecting) {
-          bottomTimer = setTimeout(function () {
-            if (!hasStarted || hasCompleted) return;
-
-            hasCompleted = true;
-
-            var elapsedMs = Date.now() - startedAt;
-
-            pushEvent(classify(elapsedMs), elapsedMs);
-
-            bottomObserver.disconnect();
-          }, bottomVisibleRequiredMs);
-        } else if (bottomTimer) {
-          clearTimeout(bottomTimer);
-          bottomTimer = null;
-        }
-      });
-    }, {
-      threshold: 0
-    });
-
-    bottomObserver.observe(bottomMarker);
-
-    window.addEventListener('scroll', checkStart);
-    window.addEventListener('resize', checkStart);
-    window.addEventListener('load', checkStart);
-
-    checkStart();
+    checkProgress();
   };
 })();
